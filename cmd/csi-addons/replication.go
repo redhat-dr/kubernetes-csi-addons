@@ -309,3 +309,39 @@ func (rep *GetVolumeReplicationInfo) Execute() error {
 
 	return nil
 }
+
+// GetReplicationDestinationInfo executes the GetReplicationDestinationInfo operation.
+type GetReplicationDestinationInfo struct {
+	VolumeReplicationBase
+}
+
+var _ = registerOperation("GetReplicationDestinationInfo", &GetReplicationDestinationInfo{})
+
+func (rep *GetReplicationDestinationInfo) Execute() error {
+	k := getKubernetesClient()
+
+	rs := service.NewReplicationServer(rep.Client, k)
+
+	req := &proto.GetReplicationDestinationInfoRequest{
+		SecretName:        rep.secretName,
+		SecretNamespace:   rep.secretNamespace,
+		ReplicationSource: &proto.ReplicationSource{},
+	}
+	err := rep.setReplicationSource(req.ReplicationSource)
+	if err != nil {
+		return err
+	}
+
+	res, err := rs.GetReplicationDestinationInfo(context.TODO(), req)
+	if err != nil {
+		return err
+	}
+
+	if req.ReplicationSource.GetVolume() != nil {
+		fmt.Printf("replication destination info for volume %q: %+v\n", rep.volumeID, res)
+	} else if req.ReplicationSource.GetVolumeGroup() != nil {
+		fmt.Printf("replication destination info for volumegroup %q: %+v\n", rep.groupID, res)
+	}
+
+	return nil
+}
