@@ -24,12 +24,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 )
 
 type replicationClient struct {
 	restClient *rest.RESTClient
+	paramCodec runtime.ParameterCodec
 }
 
 func getVolumeReplicationClient() *replicationClient {
@@ -54,17 +54,19 @@ func getVolumeReplicationClient() *replicationClient {
 		panic(err)
 	}
 
-	return &replicationClient{restClient: restClient}
+	return &replicationClient{
+		restClient: restClient,
+		paramCodec: runtime.NewParameterCodec(runtimeScheme),
+	}
 }
 
 func (r *replicationClient) getVolumeGroupReplicationContent(ctx context.Context, name string, opts metav1.GetOptions) (*replicationv1alpha1.VolumeGroupReplicationContent, error) {
 	result := replicationv1alpha1.VolumeGroupReplicationContent{}
 	err := r.restClient.
 		Get().
-		Namespace("").
 		Resource("volumegroupreplicationcontents").
 		Name(name).
-		VersionedParams(&opts, scheme.ParameterCodec).
+		VersionedParams(&opts, r.paramCodec).
 		Do(ctx).
 		Into(&result)
 
