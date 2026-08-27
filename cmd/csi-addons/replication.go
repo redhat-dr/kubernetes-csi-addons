@@ -67,7 +67,7 @@ func (rep *VolumeReplicationBase) Init(c *command) error {
 	if c.persistentVolume != "" {
 		pv, err := getKubernetesClient().CoreV1().PersistentVolumes().Get(context.Background(), c.persistentVolume, metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to get pv %q", c.persistentVolume)
+			return fmt.Errorf("failed to get pv %q: %w", c.persistentVolume, err)
 		}
 
 		if pv.Spec.CSI == nil {
@@ -82,7 +82,7 @@ func (rep *VolumeReplicationBase) Init(c *command) error {
 	} else if c.volumeGroupReplicationContent != "" {
 		vgrc, err := getVolumeReplicationClient().getVolumeGroupReplicationContent(context.Background(), c.volumeGroupReplicationContent, metav1.GetOptions{})
 		if err != nil {
-			return fmt.Errorf("failed to get VolumeGroupReplicationContent %q", c.volumeGroupReplicationContent)
+			return fmt.Errorf("failed to get VolumeGroupReplicationContent %q: %w", c.volumeGroupReplicationContent, err)
 		}
 		if vgrc.Spec.VolumeGroupReplicationHandle == "" {
 			return errors.New("volume group ID is not set")
@@ -131,8 +131,9 @@ func (rep *EnableVolumeReplication) Execute() error {
 	rs := service.NewReplicationServer(rep.Client, k)
 
 	req := &proto.EnableVolumeReplicationRequest{
-		SecretName:      rep.secretName,
-		SecretNamespace: rep.secretNamespace,
+		SecretName:        rep.secretName,
+		SecretNamespace:   rep.secretNamespace,
+		ReplicationSource: &proto.ReplicationSource{},
 	}
 	err := rep.setReplicationSource(req.ReplicationSource)
 	if err != nil {
@@ -161,8 +162,9 @@ func (rep *DisableVolumeReplication) Execute() error {
 	rs := service.NewReplicationServer(rep.Client, k)
 
 	req := &proto.DisableVolumeReplicationRequest{
-		SecretName:      rep.secretName,
-		SecretNamespace: rep.secretNamespace,
+		SecretName:        rep.secretName,
+		SecretNamespace:   rep.secretNamespace,
+		ReplicationSource: &proto.ReplicationSource{},
 	}
 	err := rep.setReplicationSource(req.ReplicationSource)
 	if err != nil {
@@ -192,8 +194,9 @@ func (rep *PromoteVolume) Execute() error {
 	rs := service.NewReplicationServer(rep.Client, k)
 
 	req := &proto.PromoteVolumeRequest{
-		SecretName:      rep.secretName,
-		SecretNamespace: rep.secretNamespace,
+		SecretName:        rep.secretName,
+		SecretNamespace:   rep.secretNamespace,
+		ReplicationSource: &proto.ReplicationSource{},
 	}
 	err := rep.setReplicationSource(req.ReplicationSource)
 	if err != nil {
@@ -222,8 +225,9 @@ func (rep *DemoteVolume) Execute() error {
 	rs := service.NewReplicationServer(rep.Client, k)
 
 	req := &proto.DemoteVolumeRequest{
-		SecretName:      rep.secretName,
-		SecretNamespace: rep.secretNamespace,
+		SecretName:        rep.secretName,
+		SecretNamespace:   rep.secretNamespace,
+		ReplicationSource: &proto.ReplicationSource{},
 	}
 	err := rep.setReplicationSource(req.ReplicationSource)
 	if err != nil {
@@ -252,8 +256,9 @@ func (rep *ResyncVolume) Execute() error {
 	rs := service.NewReplicationServer(rep.Client, k)
 
 	req := &proto.ResyncVolumeRequest{
-		SecretName:      rep.secretName,
-		SecretNamespace: rep.secretNamespace,
+		SecretName:        rep.secretName,
+		SecretNamespace:   rep.secretNamespace,
+		ReplicationSource: &proto.ReplicationSource{},
 	}
 	err := rep.setReplicationSource(req.ReplicationSource)
 	if err != nil {
@@ -282,8 +287,9 @@ func (rep *GetVolumeReplicationInfo) Execute() error {
 	rs := service.NewReplicationServer(rep.Client, k)
 
 	req := &proto.GetVolumeReplicationInfoRequest{
-		SecretName:      rep.secretName,
-		SecretNamespace: rep.secretNamespace,
+		SecretName:        rep.secretName,
+		SecretNamespace:   rep.secretNamespace,
+		ReplicationSource: &proto.ReplicationSource{},
 	}
 	err := rep.setReplicationSource(req.ReplicationSource)
 	if err != nil {
@@ -295,7 +301,11 @@ func (rep *GetVolumeReplicationInfo) Execute() error {
 		return err
 	}
 
-	fmt.Printf("replication info for %q: %+v\n", rep.volumeID, res)
+	if req.ReplicationSource.GetVolume() != nil {
+		fmt.Printf("replication info for volume %q: %+v\n", rep.volumeID, res)
+	} else if req.ReplicationSource.GetVolumeGroup() != nil {
+		fmt.Printf("replication info for volumegroup %q: %+v\n", rep.groupID, res)
+	}
 
 	return nil
 }
