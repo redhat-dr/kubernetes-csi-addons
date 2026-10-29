@@ -160,9 +160,18 @@ bundle-validate: container-cmd operator-sdk
 ##@ Build
 
 .PHONY: build
-build: generate fmt vet ## Build manager binary.
+build: generate fmt vet build-manager build-sidecar build-tool ## Build all binaries.
+
+.PHONY: build-manager
+build-manager: ## Build manager binary.
 	go build -ldflags '$(LDFLAGS)' -a -o bin/csi-addons-manager cmd/manager/main.go
+
+.PHONY: build-sidecar
+build-sidecar: ## Build sidecar binary.
 	go build -ldflags '$(LDFLAGS)' -a -o bin/csi-addons-sidecar sidecar/main.go
+
+.PHONY: build-tool
+build-tool: ## Build csi-addons CLI tool.
 	go build -ldflags '$(LDFLAGS)' -a -o bin/csi-addons ./cmd/csi-addons
 
 .PHONY: run
@@ -214,11 +223,11 @@ uninstall: manifests ## Uninstall CRDs from the K8s cluster specified in ~/.kube
 
 .PHONY: deploy
 deploy: manifests ## Deploy controller to the K8s cluster specified in ~/.kube/config.
-	cd deploy/controller && kubectl apply -f setup-controller.yaml -f crds.yaml -f rbac.yaml
+	kubectl apply -k deploy/controller
 
 .PHONY: undeploy
 undeploy: ## Undeploy controller from the K8s cluster specified in ~/.kube/config. Call with ignore-not-found=true to ignore resource not found errors during deletion.
-	cd deploy/controller && kubectl delete -f setup-controller.yaml -f rbac.yaml -f crds.yaml --ignore-not-found=$(ignore-not-found)
+	kubectl delete -k deploy/controller --ignore-not-found=$(ignore-not-found)
 
 # controller-gen gets installed from the vendor/ directory.
 CONTROLLER_GEN = $(shell pwd)/bin/controller-gen

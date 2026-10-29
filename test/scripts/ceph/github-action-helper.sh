@@ -11,13 +11,20 @@ ROOK_HELPER="${REPO_DIR}/tests/scripts/github-action-helper.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=test/scripts/ceph/utils.sh
 source "${SCRIPT_DIR}/utils.sh"
+# shellcheck source=test/scripts/ceph/build.env
+source "${SCRIPT_DIR}/build.env"
 
 #############
 # VARIABLES #
 #############
 : "${FUNCTION:=${1}}"
 
-CEPH_IMAGE=${CEPH_IMAGE:-"quay.io/ceph/ceph:v19.2.5"}
+# The csi-addons sidecar is built from this repo.
+CSIADDONS_SIDECAR_IMAGE="quay.io/csiaddons/k8s-sidecar:${TAG:-test}"
+
+# To use yq strenv
+export CEPH_IMAGE CSIADDONS_SIDECAR_IMAGE
+
 #############
 # WRAPPER FUNCTIONS - Delegate to Rook's script
 #############
@@ -46,7 +53,7 @@ function create_bluestore_partitions() {
 # CUSTOM FUNCTIONS - Specific to this project
 #############
 function checkout_rook_release() {
-	local tag="$1"
+	local tag="${1:-${ROOK_VERSION}}"
 	local repo_url="https://github.com/rook/rook.git"
 	echo "Cloning Rook repository with tag: ${tag}..."
 	git clone \
@@ -65,18 +72,21 @@ function checkout_rook_release() {
 function deploy_rook() {
 	cd "${REPO_DIR}/deploy/examples"
 
+	# Replace only the csi-addons image, rest handled by operator.
+	# Reduce replica count to 1 as this is a single node.
 	yq -i '
-  with(select(.kind == "ConfigMap");
-    .data.CSI_ENABLE_CSIADDONS = "true" |
-	.data.ROOK_CSIADDONS_IMAGE = "quay.io/csiaddons/k8s-sidecar:test" |
-	.data.ROOK_CSI_CEPH_IMAGE = "quay.io/cephcsi/cephcsi:canary" |
-	.data.CSI_LOG_LEVEL = "5"
+  with(select(.kind == "ConfigMap" and .metadata.name == "rook-csi-operator-image-set-configmap");
+    .data.addons = strenv(CSIADDONS_SIDECAR_IMAGE)
+  ) |
+  with(select(.kind == "OperatorConfig");
+    .spec.driverSpecDefaults.deployCsiAddons = true |
+    .spec.driverSpecDefaults.log.verbosity = 5 |
+    .spec.driverSpecDefaults.controllerPlugin.replicas = 1
   )' operator.yaml
 	kubectl_retry create -f crds.yaml
 	kubectl_retry create -f common.yaml
+	kubectl_retry create -f csi-operator.yaml # Must be before operator.yaml
 	kubectl_retry create -f operator.yaml
-	kubectl_retry create -f csi-operator.yaml
-
 }
 function deploy_first_ceph_cluster() {
 	DEVICE_NAME="$(find_extra_block_dev)"
@@ -89,7 +99,7 @@ function deploy_first_ceph_cluster() {
 	    .spec.dashboard.enabled = false |
 	    .spec.storage.useAllDevices = false |
 	    .spec.storage.deviceFilter = strenv(DEVICE_NAME) + "1" |
-		.spec.image = strenv(CEPH_IMAGE)
+		.spec.cephVersion.image = strenv(CEPH_IMAGE)
 	  )
 	' cluster-test.yaml
 	kubectl_retry create -f cluster-test.yaml
@@ -111,7 +121,7 @@ function deploy_second_ceph_cluster() {
 	  with(select(.kind == "CephCluster");
 	    .spec.dataDirHostPath = "/var/lib/rook-external" |
 	    .spec.storage.deviceFilter = strenv(DEVICE_NAME) + "2" |
-		.spec.image = strenv(CEPH_IMAGE)
+		.spec.cephVersion.image = strenv(CEPH_IMAGE)
 	  )
 	' cluster-test.yaml
 	kubectl_retry create -f cluster-test.yaml
@@ -285,8 +295,10 @@ verify_mirroring_health() {
 
 FUNCTION="$1"
 shift # remove function arg now that we've recorded it
+
+# Bash does not honor set directives inside conditional calls.
+# Use TRAP instead and call the function normally.
+trap 'echo "Call to ${FUNCTION} was not successful" >&2; exit 1' ERR
+
 # call the function with the remainder of the user-provided args
-if ! $FUNCTION "$@"; then
-	echo "Call to $FUNCTION was not successful" >&2
-	exit 1
-fi
+"${FUNCTION}" "$@"
