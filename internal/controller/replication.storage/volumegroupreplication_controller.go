@@ -246,13 +246,18 @@ func (r *VolumeGroupReplicationReconciler) Reconcile(ctx context.Context, req ct
 			}
 		}
 
-		// Create/Update VolumeGroupReplicationContent CR
-		pvHandlesList := getPVHandles(pvInfoMap)
-		err = r.createOrUpdateVolumeGroupReplicationContentCR(instance, vgrContentObj, vgrClassObj.Spec.Provisioner, pvHandlesList)
-		if err != nil {
-			r.log.Error(err, "failed to create/update volumeGroupReplicationContent resource", "VGRContentName", vgrContentObj.Name)
-			_ = r.setGroupReplicationFailure(instance, err)
-			return reconcile.Result{}, err
+		// When secondary, do not overwrite VGRC volumnHandles from PVC selector.
+		// Destination handles (from S3 restore) must be preserved.
+		// Create/Modify of VolumeGroupReplicationContent CR is only
+		// meaningful when this cluster owns the group (primary)
+		if instance.Spec.ReplicationState == replicationv1alpha1.Primary {
+			pvHandlesList := getPVHandles(pvInfoMap)
+			err = r.createOrUpdateVolumeGroupReplicationContentCR(instance, vgrContentObj, vgrClassObj.Spec.Provisioner, pvHandlesList)
+			if err != nil {
+				r.log.Error(err, "failed to create/update volumeGroupReplicationContent resource", "VGRContentName", vgrContentObj.Name)
+				_ = r.setGroupReplicationFailure(instance, err)
+				return reconcile.Result{}, err
+			}
 		}
 
 		// Update the VGR with VGRContentName, if empty
